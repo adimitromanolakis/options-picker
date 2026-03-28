@@ -3,25 +3,10 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, R
 import type { OptionLeg } from '../types';
 import { stockInfo } from '../data';
 import { useTheme } from '../ThemeContext';
+import { calculateOptionsFuture } from '../lib/options';
 
 interface Props {
   legs: OptionLeg[];
-}
-
-function calculatePayoff(legs: OptionLeg[], price: number): number {
-  let totalPayoff = 0;
-  for (const leg of legs) {
-    const intrinsic = leg.type === 'call'
-      ? Math.max(0, price - leg.strike)
-      : Math.max(0, leg.strike - price);
-
-    if (leg.position === 'long') {
-      totalPayoff += (intrinsic - leg.premium) * leg.quantity * 100;
-    } else {
-      totalPayoff += (leg.premium - intrinsic) * leg.quantity * 100;
-    }
-  }
-  return totalPayoff;
 }
 
 interface DataPoint {
@@ -40,17 +25,7 @@ export default function PayoffDiagram({ legs }: Props) {
   const dragRef = useRef<{ startX: number; startMin: number; startMax: number } | null>(null);
 
   const fullData = useMemo((): DataPoint[] => {
-    const min = roundedSpot - RANGE_OFFSET;
-    const max = roundedSpot + RANGE_OFFSET;
-    const points: DataPoint[] = [];
-    for (let p = min; p <= max + STEP / 2; p += STEP) {
-      const price = Math.round(p * 10) / 10;
-      points.push({
-        price,
-        pnl: Math.round(calculatePayoff(legs, price) * 100) / 100,
-      });
-    }
-    return points;
+    return calculateOptionsFuture(legs, spot, RANGE_OFFSET, STEP);
   }, [legs, roundedSpot]);
 
   const defaultMin = roundedSpot - RANGE_OFFSET;

@@ -1,125 +1,5 @@
-import type { Strategy, ExpirationChain, StockInfo, OptionsContract } from './types';
-
-// --- CSV parsing (unchanged) ---
-
-function parseCSVLine(line: string): string[] {
-  const cols: string[] = [];
-  let field = '';
-  let inQuotes = false;
-  for (const ch of line) {
-    if (ch === '"') { inQuotes = !inQuotes; continue; }
-    if (ch === ',' && !inQuotes) { cols.push(field); field = ''; continue; }
-    field += ch;
-  }
-  cols.push(field);
-  return cols;
-}
-
-function parseNum(val: string): number | undefined {
-  if (!val || val === 'NA' || val === 'NaN') return undefined;
-  const n = parseFloat(val);
-  return isNaN(n) ? undefined : n;
-}
-
-interface RawRow {
-  type: 'C' | 'P';
-  strike: number;
-  expiration: string;
-  bid: number;
-  ask: number;
-  iv?: number;
-  delta?: number;
-  gamma?: number;
-  theta?: number;
-  vega?: number;
-  volume?: number;
-}
-
-function parseOptionsCSV(csv: string): RawRow[] {
-  const lines = csv.split('\n').slice(1).filter(l => l.trim());
-  const rows: RawRow[] = [];
-
-  for (const line of lines) {
-    const cols = parseCSVLine(line);
-    const type = cols[1] as 'C' | 'P';
-    const strike = parseFloat(cols[2]);
-    const expiration = cols[3].trim();
-    const bid = parseFloat(cols[5]);
-    const ask = parseFloat(cols[6]);
-    const vol = parseNum(cols[7]);
-    const iv = parseNum(cols[15]);
-    const delta = parseNum(cols[18]);
-    const gamma = parseNum(cols[19]);
-    const theta = parseNum(cols[20]);
-    const vega = parseNum(cols[21]);
-
-    if (isNaN(strike) || isNaN(bid) || isNaN(ask)) continue;
-
-    rows.push({ type, strike, expiration, bid, ask, iv, delta, gamma, theta, vega, volume: vol });
-  }
-
-  return rows;
-}
-
-function buildExpirationChains(rows: RawRow[]): ExpirationChain[] {
-  const byExpiration = new Map<string, Map<number, { call?: RawRow; put?: RawRow }>>();
-
-  for (const row of rows) {
-    if (!byExpiration.has(row.expiration)) {
-      byExpiration.set(row.expiration, new Map());
-    }
-    const strikeMap = byExpiration.get(row.expiration)!;
-    if (!strikeMap.has(row.strike)) {
-      strikeMap.set(row.strike, {});
-    }
-    const entry = strikeMap.get(row.strike)!;
-    if (row.type === 'C') entry.call = row;
-    else entry.put = row;
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const chains: ExpirationChain[] = [];
-
-  for (const [date, strikeMap] of [...byExpiration.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-    const expDate = new Date(date + 'T00:00:00');
-    const dte = Math.max(0, Math.round((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
-
-    const contracts: OptionsContract[] = [];
-
-    for (const [strike, entry] of [...strikeMap.entries()].sort((a, b) => a[0] - b[0])) {
-      const c = entry.call;
-      const p = entry.put;
-
-      contracts.push({
-        strike,
-        callBid: c?.bid ?? 0,
-        callAsk: c?.ask ?? 0,
-        callIV: c?.iv ?? 0,
-        callDelta: c?.delta ?? 0,
-        callGamma: c?.gamma ?? 0,
-        callTheta: c?.theta ?? 0,
-        callVega: c?.vega ?? 0,
-        callVolume: c?.volume ?? 0,
-        callOI: 0,
-        putBid: p?.bid ?? 0,
-        putAsk: p?.ask ?? 0,
-        putIV: p?.iv ?? 0,
-        putDelta: p?.delta ?? 0,
-        putGamma: p?.gamma ?? 0,
-        putTheta: p?.theta ?? 0,
-        putVega: p?.vega ?? 0,
-        putVolume: p?.volume ?? 0,
-        putOI: 0,
-      });
-    }
-
-    chains.push({ date, dte, contracts });
-  }
-
-  return chains;
-}
+import type { Strategy, ExpirationChain, StockInfo } from './types';
+import { readCSVOptionsData } from './lib/csvreader';
 
 // --- Mutable data exports ---
 
@@ -171,8 +51,7 @@ export async function loadData() {
     changePercent: 0,
   };
 
-  const rawRows = parseOptionsCSV(csvText);
-  const chains = buildExpirationChains(rawRows);
+  const chains = readCSVOptionsData(csvText) as ExpirationChain[];
 
   setOptionsData(stock, chains);
 }
