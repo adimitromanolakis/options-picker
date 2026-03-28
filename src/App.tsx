@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { OptionLeg, MarketOutlook } from './types';
 import { strategies, expirationChains, stockInfo } from './data';
+import { useTheme } from './ThemeContext';
 import StrategySelector from './components/StrategySelector';
 import StrikePicker from './components/StrikePicker';
 import PayoffDiagram from './components/PayoffDiagram';
@@ -32,6 +33,7 @@ function lookupContractData(
 }
 
 export default function App() {
+  const { theme, themeName, toggleTheme } = useTheme();
   const [selectedOutlook, setSelectedOutlook] = useState<MarketOutlook | null>(null);
   const [selectedLegs, setSelectedLegs] = useState<OptionLeg[]>([]);
 
@@ -58,10 +60,12 @@ export default function App() {
       prev.map((l) => {
         if (l.id !== legId) return l;
         const needsContractLookup = updates.type !== undefined || updates.position !== undefined;
-        const contractData = needsContractLookup
-          ? lookupContractData(l, updates)
-          : {};
-        return { ...l, ...updates, ...contractData };
+        if (needsContractLookup) {
+          const contractData = lookupContractData(l, updates);
+          if (Object.keys(contractData).length === 0) return l;
+          return { ...l, ...updates, ...contractData };
+        }
+        return { ...l, ...updates };
       })
     );
   }, []);
@@ -74,6 +78,7 @@ export default function App() {
   const handleLoadPreset = useCallback((strategyId: string) => {
     const strategy = strategies.find((s) => s.id === strategyId);
     if (!strategy) return;
+    if (expirationChains.length === 0) return;
 
     setSelectedLegs([]);
 
@@ -82,6 +87,15 @@ export default function App() {
     const sorted = [...chain.contracts].sort((a, b) => a.strike - b.strike);
     const atmIdx = sorted.reduce((best, c, i) =>
       Math.abs(c.strike - spot) < Math.abs(sorted[best].strike - spot) ? i : best, 0);
+
+    function findContractNearIdx(startIdx: number, type: 'call' | 'put', direction: number): number {
+      for (let i = startIdx; i >= 0 && i < sorted.length; i += direction) {
+        const c = sorted[i];
+        const hasData = type === 'call' ? c.callAsk > 0 : c.putAsk > 0;
+        if (hasData) return i;
+      }
+      return startIdx;
+    }
 
     const newLegs: OptionLeg[] = strategy.legs.map((legDef, idx) => {
       let strikeIdx = atmIdx;
@@ -94,6 +108,8 @@ export default function App() {
         const offset = legDef.type === 'call' ? -1 - idx : 1 + idx;
         strikeIdx = Math.max(0, Math.min(sorted.length - 1, atmIdx + offset));
       }
+
+      strikeIdx = findContractNearIdx(strikeIdx, legDef.type, strikeIdx >= atmIdx ? 1 : -1);
 
       const contract = sorted[strikeIdx];
       const premium = legDef.position === 'long'
@@ -129,9 +145,12 @@ export default function App() {
     : null;
 
   return (
-    <div className="min-h-screen bg-[#0f1117] flex flex-col">
+    <div className="min-h-screen flex flex-col" style={{ background: theme.app.bg, color: theme.text.primary }}>
       {/* Header */}
-      <header className="bg-[#161822] border-b border-gray-800 px-6 py-2.5 flex items-center justify-between flex-shrink-0">
+      <header
+        className="border-b px-6 py-2.5 flex items-center justify-between flex-shrink-0"
+        style={{ background: theme.app.headerBg, borderColor: theme.app.border }}
+      >
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
@@ -139,37 +158,66 @@ export default function App() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
               </svg>
             </div>
-            <span className="text-base font-bold text-white">Options Strategy Builder</span>
+            <span className="text-base font-bold" style={{ color: theme.text.primary }}>Options Strategy Builder</span>
           </div>
-          <div className="h-5 w-px bg-gray-700" />
+          <div className="h-5 w-px" style={{ background: theme.app.border }} />
           <div className="flex items-center gap-3">
-            <span className="text-sm font-bold text-white">{stockInfo.symbol}</span>
-            <span className="text-xs text-gray-500">{stockInfo.name}</span>
-            <span className="text-sm font-mono font-bold text-white">${stockInfo.price.toFixed(2)}</span>
-            <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${
-              stockInfo.change >= 0 ? 'text-emerald-400 bg-emerald-500/10' : 'text-red-400 bg-red-500/10'
-            }`}>
+            <span className="text-sm font-bold" style={{ color: theme.text.primary }}>{stockInfo.symbol}</span>
+            <span className="text-xs" style={{ color: theme.text.muted }}>{stockInfo.name}</span>
+            <span className="text-sm font-mono font-bold" style={{ color: theme.text.primary }}>${stockInfo.price.toFixed(2)}</span>
+            <span
+              className="text-xs font-mono px-1.5 py-0.5 rounded"
+              style={{
+                color: stockInfo.change >= 0 ? theme.spot.positive : theme.spot.negative,
+                background: stockInfo.change >= 0 ? theme.spot.positiveBg : theme.spot.negativeBg,
+              }}
+            >
               {stockInfo.change >= 0 ? '+' : ''}{stockInfo.change.toFixed(2)} ({stockInfo.changePercent.toFixed(2)}%)
             </span>
           </div>
           {matchedStrategy && (
-            <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-md border border-indigo-500/30">
+            <span
+              className="text-xs px-2 py-0.5 rounded-md"
+              style={{ background: theme.accent.bg, color: theme.accent.text, border: `1px solid ${theme.accent.border}` }}
+            >
               {matchedStrategy.name}
             </span>
           )}
         </div>
-        <button
-          onClick={handleClearAll}
-          className="px-3 py-1 text-xs text-gray-400 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors cursor-pointer border border-gray-700"
-        >
-          Clear All
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggleTheme}
+            className="px-2 py-1 text-xs rounded-lg transition-colors cursor-pointer"
+            style={{
+              background: theme.button.bg,
+              color: theme.text.secondary,
+              border: `1px solid ${theme.button.border}`,
+            }}
+            title={`Switch to ${themeName === 'dark' ? 'light' : 'dark'} mode`}
+          >
+            {themeName === 'dark' ? '☀️' : '🌙'}
+          </button>
+          <button
+            onClick={handleClearAll}
+            className="px-3 py-1 text-xs rounded-lg transition-colors cursor-pointer"
+            style={{
+              background: theme.button.bg,
+              color: theme.text.secondary,
+              border: `1px solid ${theme.button.border}`,
+            }}
+          >
+            Clear All
+          </button>
+        </div>
       </header>
 
       {/* Main: 3-column layout */}
       <div className="flex-1 flex min-h-0">
         {/* Left sidebar: Strategy presets */}
-        <aside className="w-[260px] bg-[#12141c] border-r border-gray-800 p-3 flex flex-col overflow-hidden flex-shrink-0">
+        <aside
+          className="w-[260px] border-r p-3 flex flex-col overflow-hidden flex-shrink-0"
+          style={{ background: theme.app.sidebarBg, borderColor: theme.app.border }}
+        >
           <StrategySelector
             strategies={strategies}
             selectedStrategy={null}
@@ -181,15 +229,15 @@ export default function App() {
 
         {/* Center: Chart on top, picker below */}
         <main className="flex-1 flex flex-col min-w-0">
-          {/* Payoff chart — top half */}
+          {/* Payoff chart */}
           <div className="h-[320px] p-4 pb-2 flex-shrink-0">
             <PayoffDiagram legs={selectedLegs} />
           </div>
 
           {/* Divider */}
-          <div className="mx-4 h-px bg-gray-800 flex-shrink-0" />
+          <div className="mx-4 h-px" style={{ background: theme.app.divider }} />
 
-          {/* Strike picker — bottom half */}
+          {/* Strike picker */}
           <div className="flex-1 min-h-0 p-4 pt-2">
             <StrikePicker
               expirationChains={expirationChains}
@@ -201,7 +249,10 @@ export default function App() {
         </main>
 
         {/* Right sidebar: Position summary */}
-        <aside className="w-[300px] bg-[#12141c] border-l border-gray-800 p-3 flex flex-col overflow-y-auto flex-shrink-0">
+        <aside
+          className="w-[300px] border-l p-3 flex flex-col overflow-y-auto flex-shrink-0"
+          style={{ background: theme.app.sidebarBg, borderColor: theme.app.border }}
+        >
           <StrategySummary
             legs={selectedLegs}
             strategy={matchedStrategy ?? null}

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import type { ExpirationChain, OptionLeg, OptionType, Position } from '../types';
 import { stockInfo } from '../data';
+import { useTheme } from '../ThemeContext';
 
 interface Props {
   expirationChains: ExpirationChain[];
@@ -9,46 +10,47 @@ interface Props {
   onRemoveLeg: (legId: string) => void;
 }
 
-type CellType = 'call-long' | 'call-short' | 'put-long' | 'put-short';
-
 const MAX_LEGS = 4;
 
 export default function StrikePicker({ expirationChains, selectedLegs, onToggleLeg, onRemoveLeg }: Props) {
+  const { theme } = useTheme();
   const [selectedExpirationIdx, setSelectedExpirationIdx] = useState(0);
-  const [selectionMode, setSelectionMode] = useState<CellType>('call-long');
-  const [hoveredCell, setHoveredCell] = useState<{ strike: number; type: CellType } | null>(null);
+  const [hoveredStrike, setHoveredStrike] = useState<number | null>(null);
 
   const chain = expirationChains[selectedExpirationIdx];
   const spot = stockInfo.price;
 
   const visibleContracts = useMemo(() => {
+    if (!chain?.contracts?.length) return [];
     const sorted = [...chain.contracts].sort((a, b) => a.strike - b.strike);
     const atmIdx = sorted.reduce((best, c, i) =>
       Math.abs(c.strike - spot) < Math.abs(sorted[best].strike - spot) ? i : best, 0);
-    const start = Math.max(0, atmIdx - 7);
-    const end = Math.min(sorted.length, atmIdx + 8);
+    const start = Math.max(0, atmIdx - 12);
+    const end = Math.min(sorted.length, atmIdx + 13);
     return sorted.slice(start, end);
-  }, [chain.contracts, spot]);
+  }, [chain?.contracts, spot]);
 
-  function findLegAtStrike(strike: number, type: OptionType, position: Position): OptionLeg | undefined {
-    return selectedLegs.find(
+  const minStrikeDiff = useMemo(() => {
+    if (!chain?.contracts?.length) return 2.5;
+    const sorted = [...chain.contracts].map(c => c.strike).sort((a, b) => a - b);
+    let min = Infinity;
+    for (let i = 1; i < sorted.length; i++) {
+      const diff = sorted[i] - sorted[i - 1];
+      if (diff > 0 && diff < min) min = diff;
+    }
+    return min === Infinity ? 2.5 : min;
+  }, [chain?.contracts]);
+
+  function handleCellClick(strike: number, side: 'call' | 'put', col: 'bid' | 'ask') {
+    if (!chain) return;
+    const type: OptionType = side;
+    const position: Position = col === 'ask' ? 'long' : 'short';
+
+    const existing = selectedLegs.find(
       (l) => l.strike === strike && l.type === type && l.position === position && l.expiration === chain.date
     );
-  }
-
-  function getLegIndex(strike: number, type: OptionType, position: Position): number {
-    return selectedLegs.findIndex(
-      (l) => l.strike === strike && l.type === type && l.position === position && l.expiration === chain.date
-    );
-  }
-
-  function handleCellClick(strike: number, mode: CellType) {
-    const type: OptionType = mode.includes('call') ? 'call' : 'put';
-    const position: Position = mode.includes('long') ? 'long' : 'short';
-
-    const existingIdx = getLegIndex(strike, type, position);
-    if (existingIdx >= 0) {
-      onRemoveLeg(selectedLegs[existingIdx].id);
+    if (existing) {
+      onRemoveLeg(existing.id);
       return;
     }
 
@@ -57,9 +59,10 @@ export default function StrikePicker({ expirationChains, selectedLegs, onToggleL
     const contract = chain.contracts.find((c) => c.strike === strike);
     if (!contract) return;
 
-    const premium = position === 'long'
+    const premium = col === 'ask'
       ? (type === 'call' ? contract.callAsk : contract.putAsk)
       : (type === 'call' ? contract.callBid : contract.putBid);
+    if (premium === 0) return;
 
     const leg: OptionLeg = {
       id: `custom-${Date.now()}-${strike}-${type}-${position}`,
@@ -79,31 +82,21 @@ export default function StrikePicker({ expirationChains, selectedLegs, onToggleL
     onToggleLeg(leg);
   }
 
-  function getCellState(strike: number, mode: CellType): 'none' | 'selected' | 'other-selected' {
-    const type: OptionType = mode.includes('call') ? 'call' : 'put';
-    const position: Position = mode.includes('long') ? 'long' : 'short';
-
-    if (findLegAtStrike(strike, type, position)) return 'selected';
-
-    const otherPosition: Position = position === 'long' ? 'short' : 'long';
-    if (findLegAtStrike(strike, type, otherPosition)) return 'other-selected';
-
-    return 'none';
+  function isLegSelected(strike: number, side: 'call' | 'put', col: 'bid' | 'ask'): boolean {
+    if (!chain) return false;
+    const position: Position = col === 'ask' ? 'long' : 'short';
+    return selectedLegs.some(
+      (l) => l.strike === strike && l.type === side && l.position === position && l.expiration === chain.date
+    );
   }
 
-  const modeLabels: Record<CellType, { label: string; color: string }> = {
-    'call-long': { label: 'Buy Call', color: 'emerald' },
-    'call-short': { label: 'Sell Call', color: 'teal' },
-    'put-long': { label: 'Buy Put', color: 'red' },
-    'put-short': { label: 'Sell Put', color: 'orange' },
-  };
-
-  const colorClasses: Record<string, { bg: string; activeBg: string; border: string; text: string; hover: string }> = {
-    emerald: { bg: 'bg-emerald-500/10', activeBg: 'bg-emerald-500/30', border: 'border-emerald-500/50', text: 'text-emerald-400', hover: 'hover:bg-emerald-500/20' },
-    teal: { bg: 'bg-teal-500/10', activeBg: 'bg-teal-500/30', border: 'border-teal-500/50', text: 'text-teal-400', hover: 'hover:bg-teal-500/20' },
-    red: { bg: 'bg-red-500/10', activeBg: 'bg-red-500/30', border: 'border-red-500/50', text: 'text-red-400', hover: 'hover:bg-red-500/20' },
-    orange: { bg: 'bg-orange-500/10', activeBg: 'bg-orange-500/30', border: 'border-orange-500/50', text: 'text-orange-400', hover: 'hover:bg-orange-500/20' },
-  };
+  if (!chain) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center text-sm" style={{ color: theme.text.muted }}>
+        No options data loaded
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -113,203 +106,162 @@ export default function StrikePicker({ expirationChains, selectedLegs, onToggleL
           <button
             key={ch.date}
             onClick={() => setSelectedExpirationIdx(idx)}
-            className={`px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-all cursor-pointer ${
-              idx === selectedExpirationIdx
-                ? 'bg-indigo-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-300'
-            }`}
+            className="px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-all cursor-pointer"
+            style={{
+              background: idx === selectedExpirationIdx ? '#6366f1' : theme.button.bg,
+              color: idx === selectedExpirationIdx ? '#ffffff' : theme.text.secondary,
+            }}
           >
-            {ch.date} <span className="text-gray-500">({ch.dte}d)</span>
+            {ch.date} <span style={{ color: theme.text.muted }}>({ch.dte}d)</span>
           </button>
         ))}
       </div>
 
-      {/* Mode selector */}
-      <div className="flex items-center gap-1.5 mb-2">
-        <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mr-1">Action:</span>
-        {(Object.entries(modeLabels) as [CellType, { label: string; color: string }][]).map(([mode, { label, color }]) => {
-          const colors = colorClasses[color];
-          const isActive = selectionMode === mode;
-          return (
-            <button
-              key={mode}
-              onClick={() => setSelectionMode(mode)}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer border ${
-                isActive
-                  ? `${colors.activeBg} ${colors.text} ${colors.border}`
-                  : `${colors.bg} ${colors.text} border-transparent ${colors.hover}`
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })}
-        <div className="ml-auto flex items-center gap-1.5">
-          <span className="text-[10px] text-gray-500">
-            {selectedLegs.length}/{MAX_LEGS} legs
-          </span>
-          {selectedLegs.length > 0 && (
-            <span className="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">
-              {selectedLegs.length === MAX_LEGS ? 'Max reached' : `${MAX_LEGS - selectedLegs.length} remaining`}
-            </span>
-          )}
-        </div>
-      </div>
-
       {/* Chain grid */}
-      <div className="flex-1 overflow-y-auto min-h-0 rounded-lg border border-gray-800 bg-gray-900/50">
-        {/* Header */}
-        <div className="grid grid-cols-[1fr_80px_1fr] text-[10px] font-semibold text-gray-500 uppercase tracking-wider sticky top-0 bg-[#12141c] border-b border-gray-800 z-10">
-          <div className="flex items-center justify-end pr-3 py-1.5 gap-3">
-            <span>CALLS</span>
+      <div
+        className="flex-1 overflow-y-auto min-h-0 rounded-lg border"
+        style={{ background: theme.chart.bg, borderColor: theme.app.border }}
+      >
+        {/* Header row */}
+        <div
+          className="grid grid-cols-[1fr_80px_1fr] text-[10px] font-semibold uppercase tracking-wider sticky top-0 border-b z-10"
+          style={{ background: theme.app.sidebarBg, borderColor: theme.app.border }}
+        >
+          <div className="grid grid-cols-4 text-center py-1.5 px-1" style={{ color: theme.text.muted }}>
+            <span>Vol</span>
+            <span>IV</span>
+            <span style={{ color: theme.buy.text }}>Ask</span>
+            <span style={{ color: theme.sell.text }}>Bid</span>
           </div>
-          <div className="flex items-center justify-center py-1.5">Strike</div>
-          <div className="flex items-center pl-3 py-1.5 gap-3">
-            <span>PUTS</span>
+          <div className="flex items-center justify-center py-1.5" style={{ color: theme.text.secondary }}>Strike</div>
+          <div className="grid grid-cols-4 text-center py-1.5 px-1" style={{ color: theme.text.muted }}>
+            <span style={{ color: theme.sell.text }}>Bid</span>
+            <span style={{ color: theme.buy.text }}>Ask</span>
+            <span>IV</span>
+            <span>Vol</span>
           </div>
         </div>
 
+        {/* Data rows */}
         {visibleContracts.map((contract) => {
-          const isATM = Math.abs(contract.strike - spot) < 1.5;
-
-          // Check states for all 4 possible legs at this strike
-          const callLongState = getCellState(contract.strike, 'call-long');
-          const callShortState = getCellState(contract.strike, 'call-short');
-          const putLongState = getCellState(contract.strike, 'put-long');
-          const putShortState = getCellState(contract.strike, 'put-short');
-
-          const callLongLeg = findLegAtStrike(contract.strike, 'call', 'long');
-          const callShortLeg = findLegAtStrike(contract.strike, 'call', 'short');
-          const putLongLeg = findLegAtStrike(contract.strike, 'put', 'long');
-          const putShortLeg = findLegAtStrike(contract.strike, 'put', 'short');
-
-          const hovered = hoveredCell?.strike === contract.strike;
+          const isATM = Math.abs(contract.strike - spot) <= minStrikeDiff;
 
           return (
             <div
               key={contract.strike}
-              className={`grid grid-cols-[1fr_80px_1fr] border-b border-gray-800/50 text-xs transition-colors ${
-                hovered ? 'bg-gray-800/60' : isATM ? 'bg-indigo-500/5' : ''
-              }`}
+              className="grid grid-cols-[1fr_80px_1fr] border-b transition-colors"
+              style={{
+                borderColor: theme.app.borderLight,
+                background: hoveredStrike === contract.strike
+                  ? (theme.name === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)')
+                  : isATM ? theme.atm.bg : 'transparent',
+              }}
+              onMouseEnter={() => setHoveredStrike(contract.strike)}
+              onMouseLeave={() => setHoveredStrike(null)}
             >
-              {/* Call side - bid/ask clickable */}
-              <div className="flex items-stretch border-r border-gray-800/50">
-                {/* Buy call */}
-                <button
-                  onClick={() => handleCellClick(contract.strike, 'call-long')}
-                  onMouseEnter={() => setHoveredCell({ strike: contract.strike, type: 'call-long' })}
-                  onMouseLeave={() => setHoveredCell(null)}
-                  className={`flex-1 flex items-center justify-end px-2 py-1.5 transition-all cursor-pointer relative ${
-                    callLongState === 'selected'
-                      ? 'bg-emerald-500/25 ring-1 ring-inset ring-emerald-500/60'
-                      : 'hover:bg-emerald-500/10'
-                  }`}
-                  disabled={selectedLegs.length >= MAX_LEGS && callLongState === 'none'}
-                >
-                  <span className="text-gray-400 text-[10px] mr-2">${contract.callAsk.toFixed(2)}</span>
-                  <span className={`font-mono font-medium ${
-                    contract.strike < spot ? 'text-emerald-300' : 'text-gray-300'
-                  }`}>
-                    {contract.callDelta.toFixed(2)}
-                  </span>
-                  {callLongLeg && (
-                    <span className="absolute top-0.5 right-1 text-[8px] text-emerald-400 font-bold">B</span>
-                  )}
-                </button>
-
-                {/* Sell call */}
-                <button
-                  onClick={() => handleCellClick(contract.strike, 'call-short')}
-                  onMouseEnter={() => setHoveredCell({ strike: contract.strike, type: 'call-short' })}
-                  onMouseLeave={() => setHoveredCell(null)}
-                  className={`flex-1 flex items-center justify-end px-2 py-1.5 transition-all cursor-pointer relative ${
-                    callShortState === 'selected'
-                      ? 'bg-teal-500/25 ring-1 ring-inset ring-teal-500/60'
-                      : 'hover:bg-teal-500/10'
-                  }`}
-                  disabled={selectedLegs.length >= MAX_LEGS && callShortState === 'none'}
-                >
-                  <span className="text-gray-400 text-[10px] mr-2">${contract.callBid.toFixed(2)}</span>
-                  <span className="text-gray-500 font-mono text-[10px]">{(contract.callIV * 100).toFixed(0)}%</span>
-                  {callShortLeg && (
-                    <span className="absolute top-0.5 right-1 text-[8px] text-teal-400 font-bold">S</span>
-                  )}
-                </button>
+              {/* Call side (left) */}
+              <div className="grid grid-cols-4 items-center text-xs px-1">
+                <DataCell value={contract.callVolume > 0 ? contract.callVolume.toLocaleString() : '—'} theme={theme} />
+                <DataCell value={contract.callIV > 0 ? `${(contract.callIV * 100).toFixed(0)}%` : '—'} theme={theme} />
+                <PriceCell
+                  value={contract.callAsk > 0 ? contract.callAsk.toFixed(2) : '—'}
+                  onClick={() => handleCellClick(contract.strike, 'call', 'ask')}
+                  clickable={contract.callAsk > 0}
+                  selected={isLegSelected(contract.strike, 'call', 'ask')}
+                  theme={theme}
+                  type="buy"
+                />
+                <PriceCell
+                  value={contract.callBid > 0 ? contract.callBid.toFixed(2) : '—'}
+                  onClick={() => handleCellClick(contract.strike, 'call', 'bid')}
+                  clickable={contract.callBid > 0}
+                  selected={isLegSelected(contract.strike, 'call', 'bid')}
+                  theme={theme}
+                  type="sell"
+                />
               </div>
 
-              {/* Strike */}
-              <div className={`flex items-center justify-center font-bold text-sm ${
-                isATM ? 'text-indigo-400 bg-indigo-500/10' : 'text-gray-300'
-              }`}>
+              {/* Strike (center, large) */}
+              <div
+                className="flex items-center justify-center font-bold text-base py-1.5"
+                style={{ color: isATM ? theme.atm.text : theme.text.primary }}
+              >
                 {contract.strike.toFixed(0)}
-                {isATM && <span className="ml-0.5 text-[8px] text-indigo-500">ATM</span>}
               </div>
 
-              {/* Put side */}
-              <div className="flex items-stretch">
-                {/* Buy put */}
-                <button
-                  onClick={() => handleCellClick(contract.strike, 'put-long')}
-                  onMouseEnter={() => setHoveredCell({ strike: contract.strike, type: 'put-long' })}
-                  onMouseLeave={() => setHoveredCell(null)}
-                  className={`flex-1 flex items-center px-2 py-1.5 transition-all cursor-pointer relative ${
-                    putLongState === 'selected'
-                      ? 'bg-red-500/25 ring-1 ring-inset ring-red-500/60'
-                      : 'hover:bg-red-500/10'
-                  }`}
-                  disabled={selectedLegs.length >= MAX_LEGS && putLongState === 'none'}
-                >
-                  <span className={`font-mono font-medium ${
-                    contract.strike > spot ? 'text-red-300' : 'text-gray-300'
-                  }`}>
-                    {contract.putDelta.toFixed(2)}
-                  </span>
-                  <span className="text-gray-400 text-[10px] ml-2">${contract.putAsk.toFixed(2)}</span>
-                  {putLongLeg && (
-                    <span className="absolute top-0.5 left-1 text-[8px] text-red-400 font-bold">B</span>
-                  )}
-                </button>
-
-                {/* Sell put */}
-                <button
-                  onClick={() => handleCellClick(contract.strike, 'put-short')}
-                  onMouseEnter={() => setHoveredCell({ strike: contract.strike, type: 'put-short' })}
-                  onMouseLeave={() => setHoveredCell(null)}
-                  className={`flex-1 flex items-center px-2 py-1.5 transition-all cursor-pointer relative ${
-                    putShortState === 'selected'
-                      ? 'bg-orange-500/25 ring-1 ring-inset ring-orange-500/60'
-                      : 'hover:bg-orange-500/10'
-                  }`}
-                  disabled={selectedLegs.length >= MAX_LEGS && putShortState === 'none'}
-                >
-                  <span className="text-gray-500 font-mono text-[10px]">{(contract.putIV * 100).toFixed(0)}%</span>
-                  <span className="text-gray-400 text-[10px] ml-2">${contract.putBid.toFixed(2)}</span>
-                  {putShortLeg && (
-                    <span className="absolute top-0.5 left-1 text-[8px] text-orange-400 font-bold">S</span>
-                  )}
-                </button>
+              {/* Put side (right) */}
+              <div className="grid grid-cols-4 items-center text-xs px-1">
+                <PriceCell
+                  value={contract.putBid > 0 ? contract.putBid.toFixed(2) : '—'}
+                  onClick={() => handleCellClick(contract.strike, 'put', 'bid')}
+                  clickable={contract.putBid > 0}
+                  selected={isLegSelected(contract.strike, 'put', 'bid')}
+                  theme={theme}
+                  type="sell"
+                />
+                <PriceCell
+                  value={contract.putAsk > 0 ? contract.putAsk.toFixed(2) : '—'}
+                  onClick={() => handleCellClick(contract.strike, 'put', 'ask')}
+                  clickable={contract.putAsk > 0}
+                  selected={isLegSelected(contract.strike, 'put', 'ask')}
+                  theme={theme}
+                  type="buy"
+                />
+                <DataCell value={contract.putIV > 0 ? `${(contract.putIV * 100).toFixed(0)}%` : '—'} theme={theme} />
+                <DataCell value={contract.putVolume > 0 ? contract.putVolume.toLocaleString() : '—'} theme={theme} />
               </div>
             </div>
           );
         })}
       </div>
-
-      {/* Legend */}
-      <div className="flex items-center gap-4 mt-2 text-[10px] text-gray-500">
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-sm bg-emerald-500/40" /> Buy Call
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-sm bg-teal-500/40" /> Sell Call
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-sm bg-red-500/40" /> Buy Put
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-sm bg-orange-500/40" /> Sell Put
-        </span>
-        <span className="ml-auto text-gray-600">Click a cell to toggle · Max {MAX_LEGS} legs</span>
-      </div>
     </div>
+  );
+}
+
+function DataCell({ value, theme }: { value: string; theme: import('../themes').Theme }) {
+  return (
+    <span className="text-center font-mono py-1.5" style={{ color: theme.text.muted }}>
+      {value}
+    </span>
+  );
+}
+
+function PriceCell({
+  value,
+  onClick,
+  clickable,
+  selected,
+  type,
+  theme,
+}: {
+  value: string;
+  onClick: () => void;
+  clickable: boolean;
+  selected: boolean;
+  type: 'buy' | 'sell';
+  theme: import('../themes').Theme;
+}) {
+  if (!clickable) {
+    return (
+      <span className="text-center font-mono py-1.5" style={{ color: theme.text.faint }}>—</span>
+    );
+  }
+
+  const colors = type === 'buy' ? theme.buy : theme.sell;
+
+  return (
+    <button
+      onClick={onClick}
+      className="text-center font-mono font-medium py-1.5 mx-0.5 rounded cursor-pointer transition-all"
+      style={{
+        background: selected ? colors.bgSelected : colors.bg,
+        color: colors.text,
+        outline: selected ? `1px solid ${colors.border}` : 'none',
+      }}
+      onMouseEnter={(e) => { if (!selected) e.currentTarget.style.background = colors.bgHover; }}
+      onMouseLeave={(e) => { if (!selected) e.currentTarget.style.background = colors.bg; }}
+    >
+      {value}
+    </button>
   );
 }

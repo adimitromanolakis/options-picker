@@ -1,88 +1,141 @@
-import type { Strategy, ExpirationChain, StockInfo } from './types';
+import type { Strategy, ExpirationChain, StockInfo, OptionsContract } from './types';
+import csvRaw from '../option_data.csv?raw';
+import symbolRaw from '../symbol.txt?raw';
 
+function parseCSVLine(line: string): string[] {
+  const cols: string[] = [];
+  let field = '';
+  let inQuotes = false;
+  for (const ch of line) {
+    if (ch === '"') { inQuotes = !inQuotes; continue; }
+    if (ch === ',' && !inQuotes) { cols.push(field); field = ''; continue; }
+    field += ch;
+  }
+  cols.push(field);
+  return cols;
+}
+
+function parseNum(val: string): number | undefined {
+  if (!val || val === 'NA' || val === 'NaN') return undefined;
+  const n = parseFloat(val);
+  return isNaN(n) ? undefined : n;
+}
+
+interface RawRow {
+  type: 'C' | 'P';
+  strike: number;
+  expiration: string;
+  bid: number;
+  ask: number;
+  iv?: number;
+  delta?: number;
+  gamma?: number;
+  theta?: number;
+  vega?: number;
+  volume?: number;
+}
+
+function parseOptionsCSV(csv: string): RawRow[] {
+  const lines = csv.split('\n').slice(1).filter(l => l.trim());
+  const rows: RawRow[] = [];
+
+  for (const line of lines) {
+    const cols = parseCSVLine(line);
+    const type = cols[1] as 'C' | 'P';
+    const strike = parseFloat(cols[2]);
+    const expiration = cols[3].trim();
+    const bid = parseFloat(cols[5]);
+    const ask = parseFloat(cols[6]);
+    const vol = parseNum(cols[7]);
+    const iv = parseNum(cols[15]);
+    const delta = parseNum(cols[18]);
+    const gamma = parseNum(cols[19]);
+    const theta = parseNum(cols[20]);
+    const vega = parseNum(cols[21]);
+
+    if (isNaN(strike) || isNaN(bid) || isNaN(ask)) continue;
+
+    rows.push({ type, strike, expiration, bid, ask, iv, delta, gamma, theta, vega, volume: vol });
+  }
+
+  return rows;
+}
+
+function buildExpirationChains(rows: RawRow[]): ExpirationChain[] {
+  const byExpiration = new Map<string, Map<number, { call?: RawRow; put?: RawRow }>>();
+
+  for (const row of rows) {
+    if (!byExpiration.has(row.expiration)) {
+      byExpiration.set(row.expiration, new Map());
+    }
+    const strikeMap = byExpiration.get(row.expiration)!;
+    if (!strikeMap.has(row.strike)) {
+      strikeMap.set(row.strike, {});
+    }
+    const entry = strikeMap.get(row.strike)!;
+    if (row.type === 'C') entry.call = row;
+    else entry.put = row;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const chains: ExpirationChain[] = [];
+
+  for (const [date, strikeMap] of [...byExpiration.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const expDate = new Date(date + 'T00:00:00');
+    const dte = Math.max(0, Math.round((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
+
+    const contracts: OptionsContract[] = [];
+
+    for (const [strike, entry] of [...strikeMap.entries()].sort((a, b) => a[0] - b[0])) {
+      const c = entry.call;
+      const p = entry.put;
+
+      contracts.push({
+        strike,
+        callBid: c?.bid ?? 0,
+        callAsk: c?.ask ?? 0,
+        callIV: c?.iv ?? 0,
+        callDelta: c?.delta ?? 0,
+        callGamma: c?.gamma ?? 0,
+        callTheta: c?.theta ?? 0,
+        callVega: c?.vega ?? 0,
+        callVolume: c?.volume ?? 0,
+        callOI: 0,
+        putBid: p?.bid ?? 0,
+        putAsk: p?.ask ?? 0,
+        putIV: p?.iv ?? 0,
+        putDelta: p?.delta ?? 0,
+        putGamma: p?.gamma ?? 0,
+        putTheta: p?.theta ?? 0,
+        putVega: p?.vega ?? 0,
+        putVolume: p?.volume ?? 0,
+        putOI: 0,
+      });
+    }
+
+    chains.push({ date, dte, contracts });
+  }
+
+  return chains;
+}
+
+// Parse symbol info
+const symbolJson = JSON.parse(symbolRaw);
 export const stockInfo: StockInfo = {
-  symbol: 'AAPL',
-  name: 'Apple Inc.',
-  price: 178.50,
-  change: 2.35,
-  changePercent: 1.33,
+  symbol: symbolJson.symbol[0],
+  name: symbolJson.symbol[0],
+  price: symbolJson.last_price[0],
+  change: 0,
+  changePercent: 0,
 };
 
-function generateContracts(spotPrice: number, dte: number): import('./types').OptionsContract[] {
-  const contracts: import('./types').OptionsContract[] = [];
-  const baseIV = 0.28 + (dte / 365) * 0.05;
-  const strikes: number[] = [];
+// Parse options data
+const rawRows = parseOptionsCSV(csvRaw);
+export const expirationChains: ExpirationChain[] = buildExpirationChains(rawRows);
 
-  for (let s = spotPrice - 30; s <= spotPrice + 30; s += 2.5) {
-    strikes.push(Math.round(s * 100) / 100);
-  }
-
-  for (const strike of strikes) {
-    const moneyness = (spotPrice - strike) / spotPrice;
-    const timeValue = Math.max(0.5, 3.5 * Math.sqrt(dte / 30));
-    const callIntrinsic = Math.max(0, spotPrice - strike);
-    const putIntrinsic = Math.max(0, strike - spotPrice);
-
-    const callIV = baseIV + moneyness * 0.08 + Math.random() * 0.02;
-    const putIV = baseIV - moneyness * 0.08 + Math.random() * 0.02;
-
-    const callPrice = callIntrinsic + timeValue * (1 - moneyness * 0.5);
-    const putPrice = putIntrinsic + timeValue * (1 + moneyness * 0.5);
-
-    const d1 = moneyness / (callIV * Math.sqrt(dte / 365)) + 0.5 * callIV * Math.sqrt(dte / 365);
-    const callDelta = Math.max(0.01, Math.min(0.99, normalCDF(d1)));
-    const putDelta = callDelta - 1;
-
-    contracts.push({
-      strike,
-      callBid: Math.max(0.01, callPrice - 0.05 - Math.random() * 0.1),
-      callAsk: callPrice + 0.05 + Math.random() * 0.1,
-      callIV: Math.round(callIV * 10000) / 10000,
-      callDelta: Math.round(callDelta * 1000) / 1000,
-      callGamma: Math.round((0.02 / (callIV * Math.sqrt(dte / 365))) * 10000) / 10000,
-      callTheta: Math.round((-callPrice / dte) * 100) / 100,
-      callVega: Math.round((callPrice * 0.1 * Math.sqrt(dte / 365)) * 100) / 100,
-      callVolume: Math.floor(Math.random() * 5000 + 100),
-      callOI: Math.floor(Math.random() * 20000 + 500),
-      putBid: Math.max(0.01, putPrice - 0.05 - Math.random() * 0.1),
-      putAsk: putPrice + 0.05 + Math.random() * 0.1,
-      putIV: Math.round(putIV * 10000) / 10000,
-      putDelta: Math.round(putDelta * 1000) / 1000,
-      putGamma: Math.round((0.02 / (putIV * Math.sqrt(dte / 365))) * 10000) / 10000,
-      putTheta: Math.round((-putPrice / dte) * 100) / 100,
-      putVega: Math.round((putPrice * 0.1 * Math.sqrt(dte / 365)) * 100) / 100,
-      putVolume: Math.floor(Math.random() * 3000 + 50),
-      putOI: Math.floor(Math.random() * 15000 + 300),
-    });
-  }
-
-  return contracts;
-}
-
-function normalCDF(x: number): number {
-  const a1 = 0.254829592;
-  const a2 = -0.284496736;
-  const a3 = 1.421413741;
-  const a4 = -1.453152027;
-  const a5 = 1.061405429;
-  const p = 0.3275911;
-  const sign = x < 0 ? -1 : 1;
-  x = Math.abs(x) / Math.sqrt(2);
-  const t = 1.0 / (1.0 + p * x);
-  const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
-  return 0.5 * (1.0 + sign * y);
-}
-
-export const expirationChains: ExpirationChain[] = [
-  { date: '2026-04-03', dte: 7, contracts: generateContracts(stockInfo.price, 7) },
-  { date: '2026-04-10', dte: 14, contracts: generateContracts(stockInfo.price, 14) },
-  { date: '2026-04-17', dte: 21, contracts: generateContracts(stockInfo.price, 21) },
-  { date: '2026-04-24', dte: 28, contracts: generateContracts(stockInfo.price, 28) },
-  { date: '2026-05-15', dte: 49, contracts: generateContracts(stockInfo.price, 49) },
-  { date: '2026-06-19', dte: 84, contracts: generateContracts(stockInfo.price, 84) },
-  { date: '2026-09-18', dte: 175, contracts: generateContracts(stockInfo.price, 175) },
-];
-
+// Strategies (presets — unchanged)
 export const strategies: Strategy[] = [
   {
     id: 'long-call',

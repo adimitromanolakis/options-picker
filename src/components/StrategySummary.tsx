@@ -1,4 +1,5 @@
 import type { OptionLeg, OptionType, Position, Strategy } from '../types';
+import { useTheme } from '../ThemeContext';
 
 interface Props {
   legs: OptionLeg[];
@@ -8,6 +9,8 @@ interface Props {
 }
 
 export default function StrategySummary({ legs, strategy, onRemoveLeg, onUpdateLeg }: Props) {
+  const { theme } = useTheme();
+
   const netDelta = legs.reduce((sum, leg) => {
     const sign = leg.position === 'long' ? 1 : -1;
     return sum + sign * leg.delta * leg.quantity;
@@ -35,12 +38,14 @@ export default function StrategySummary({ legs, strategy, onRemoveLeg, onUpdateL
 
   return (
     <div className="flex flex-col h-full">
-      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Position Summary</h3>
+      <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: theme.text.secondary }}>
+        Position Summary
+      </h3>
 
       {legs.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center text-gray-600 text-sm">
+        <div className="flex-1 flex items-center justify-center text-sm" style={{ color: theme.text.muted }}>
           <div className="text-center">
-            <svg className="w-8 h-8 mx-auto mb-2 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-8 h-8 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke={theme.text.faint}>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
             </svg>
             <p>Click strikes below to build your position</p>
@@ -53,20 +58,22 @@ export default function StrategySummary({ legs, strategy, onRemoveLeg, onUpdateL
             {legs.map((leg) => (
               <div
                 key={leg.id}
-                className="rounded-lg border border-gray-800 p-2.5 bg-gray-800/30"
+                className="rounded-lg border p-2.5"
+                style={{ background: theme.card.bg, borderColor: theme.card.border }}
               >
                 {/* Row 1: Strike + delete */}
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-bold text-white font-mono">
+                  <span className="text-sm font-bold font-mono" style={{ color: theme.text.primary }}>
                     ${leg.strike.toFixed(0)}
                   </span>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-gray-500 font-mono">
+                    <span className="text-[10px] font-mono" style={{ color: theme.text.muted }}>
                       {leg.expiration}
                     </span>
                     <button
                       onClick={() => onRemoveLeg(leg.id)}
-                      className="text-gray-600 hover:text-red-400 transition-colors cursor-pointer"
+                      className="transition-colors cursor-pointer"
+                      style={{ color: theme.text.muted }}
                     >
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -77,57 +84,69 @@ export default function StrategySummary({ legs, strategy, onRemoveLeg, onUpdateL
 
                 {/* Row 2: Buy/Sell + Call/Put toggles */}
                 <div className="flex gap-1.5 mb-2">
-                  {(['long', 'short'] as Position[]).map((pos) => (
-                    <button
-                      key={pos}
-                      onClick={() => onUpdateLeg(leg.id, { position: pos })}
-                      className={`flex-1 text-[11px] font-medium py-1 rounded transition-all cursor-pointer border ${
-                        leg.position === pos
-                          ? pos === 'long'
-                            ? 'bg-emerald-500/25 text-emerald-400 border-emerald-500/40'
-                            : 'bg-red-500/25 text-red-400 border-red-500/40'
-                          : 'bg-gray-800 text-gray-500 border-gray-700 hover:text-gray-300 hover:border-gray-600'
-                      }`}
-                    >
-                      {pos === 'long' ? 'Buy' : 'Sell'}
-                    </button>
-                  ))}
-                  {(['call', 'put'] as OptionType[]).map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => onUpdateLeg(leg.id, { type: t })}
-                      className={`flex-1 text-[11px] font-medium py-1 rounded transition-all cursor-pointer border ${
-                        leg.type === t
-                          ? t === 'call'
-                            ? 'bg-indigo-500/25 text-indigo-400 border-indigo-500/40'
-                            : 'bg-purple-500/25 text-purple-400 border-purple-500/40'
-                          : 'bg-gray-800 text-gray-500 border-gray-700 hover:text-gray-300 hover:border-gray-600'
-                      }`}
-                    >
-                      {t === 'call' ? 'Call' : 'Put'}
-                    </button>
-                  ))}
+                  {(['long', 'short'] as Position[]).map((pos) => {
+                    const isActive = leg.position === pos;
+                    const colors = pos === 'long' ? theme.buy : theme.sell;
+                    return (
+                      <button
+                        key={pos}
+                        onClick={() => onUpdateLeg(leg.id, { position: pos })}
+                        className="flex-1 text-[11px] font-medium py-1 rounded transition-all cursor-pointer"
+                        style={{
+                          background: isActive ? colors.bgSelected : theme.button.bg,
+                          color: isActive ? colors.text : theme.text.muted,
+                          outline: isActive ? `1px solid ${colors.border}` : `1px solid ${theme.button.border}`,
+                        }}
+                      >
+                        {pos === 'long' ? 'Buy' : 'Sell'}
+                      </button>
+                    );
+                  })}
+                  {(['call', 'put'] as OptionType[]).map((t) => {
+                    const isActive = leg.type === t;
+                    const colors = t === 'call' ? theme.call : theme.put;
+                    return (
+                      <button
+                        key={t}
+                        onClick={() => onUpdateLeg(leg.id, { type: t })}
+                        className="flex-1 text-[11px] font-medium py-1 rounded transition-all cursor-pointer"
+                        style={{
+                          background: isActive ? colors.bgSelected : theme.button.bg,
+                          color: isActive ? colors.text : theme.text.muted,
+                          outline: isActive ? `1px solid ${colors.border}` : `1px solid ${theme.button.border}`,
+                        }}
+                      >
+                        {t === 'call' ? 'Call' : 'Put'}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {/* Row 3: Price + Qty + Delta */}
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-gray-400">
-                    Price <span className="text-gray-200 font-mono font-medium">${leg.premium.toFixed(2)}</span>
+                  <span style={{ color: theme.text.secondary }}>
+                    Price <span className="font-mono font-medium" style={{ color: theme.text.primary }}>
+                      ${leg.premium.toFixed(2)}
+                    </span>
                   </span>
                   <div className="flex items-center gap-1">
-                    <span className="text-gray-500">Qty</span>
+                    <span style={{ color: theme.text.muted }}>Qty</span>
                     <input
                       type="number"
                       min={1}
                       max={100}
                       value={leg.quantity}
                       onChange={(e) => onUpdateLeg(leg.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
-                      className="w-10 text-center bg-gray-800 border border-gray-700 rounded text-[11px] text-white py-0.5"
+                      className="w-10 text-center rounded text-[11px] py-0.5"
+                      style={{ background: theme.input.bg, color: theme.text.primary, border: `1px solid ${theme.input.border}` }}
                     />
                   </div>
-                  <span className="text-gray-400">
-                    <span className={`font-mono ${leg.position === 'long' ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {leg.position === 'long' ? '+' : '-'}{leg.delta.toFixed(3)}
+                  <span style={{ color: theme.text.secondary }}>
+                    <span
+                      className="font-mono"
+                      style={{ color: leg.delta !== 0 ? (leg.delta > 0 ? theme.spot.positive : theme.spot.negative) : theme.text.muted }}
+                    >
+                      {leg.delta !== 0 ? `${leg.delta > 0 ? '+' : ''}${leg.delta.toFixed(3)}` : '—'}
                     </span>
                   </span>
                 </div>
@@ -138,14 +157,21 @@ export default function StrategySummary({ legs, strategy, onRemoveLeg, onUpdateL
           {/* Greeks */}
           <div className="grid grid-cols-4 gap-2 mb-3">
             {[
-              { label: 'Delta', value: netDelta, color: netDelta >= 0 ? 'text-emerald-400' : 'text-red-400' },
-              { label: 'Gamma', value: netGamma, color: netGamma >= 0 ? 'text-emerald-400' : 'text-red-400' },
-              { label: 'Theta', value: netTheta, color: netTheta >= 0 ? 'text-emerald-400' : 'text-red-400' },
-              { label: 'Vega', value: netVega, color: netVega >= 0 ? 'text-emerald-400' : 'text-red-400' },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="bg-gray-800/50 rounded-lg p-2 text-center border border-gray-800">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider">{label}</div>
-                <div className={`text-sm font-bold font-mono ${color}`}>
+              { label: 'Delta', value: netDelta },
+              { label: 'Gamma', value: netGamma },
+              { label: 'Theta', value: netTheta },
+              { label: 'Vega', value: netVega },
+            ].map(({ label, value }) => (
+              <div
+                key={label}
+                className="rounded-lg p-2 text-center border"
+                style={{ background: theme.card.bg, borderColor: theme.card.border }}
+              >
+                <div className="text-[10px] uppercase tracking-wider" style={{ color: theme.text.muted }}>{label}</div>
+                <div
+                  className="text-sm font-bold font-mono"
+                  style={{ color: value >= 0 ? theme.spot.positive : theme.spot.negative }}
+                >
                   {value >= 0 ? '+' : ''}{value.toFixed(3)}
                 </div>
               </div>
@@ -153,26 +179,31 @@ export default function StrategySummary({ legs, strategy, onRemoveLeg, onUpdateL
           </div>
 
           {/* Net cost */}
-          <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-800">
+          <div className="rounded-lg p-3 border" style={{ background: theme.card.bg, borderColor: theme.card.border }}>
             <div className="flex justify-between items-center">
-              <span className="text-xs text-gray-400">Net {netDebit > 0 ? 'Credit' : 'Debit'}</span>
-              <span className={`text-lg font-bold font-mono ${netDebit > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              <span className="text-xs" style={{ color: theme.text.secondary }}>
+                Net {netDebit > 0 ? 'Credit' : 'Debit'}
+              </span>
+              <span
+                className="text-lg font-bold font-mono"
+                style={{ color: netDebit > 0 ? theme.spot.positive : theme.spot.negative }}
+              >
                 ${Math.abs(netDebit).toFixed(2)}
               </span>
             </div>
             {strategy && (
-              <div className="mt-2 pt-2 border-t border-gray-700 grid grid-cols-3 gap-2 text-[10px]">
+              <div className="mt-2 pt-2 grid grid-cols-3 gap-2 text-[10px]" style={{ borderTop: `1px solid ${theme.app.border}` }}>
                 <div>
-                  <div className="text-gray-500">Max Profit</div>
-                  <div className="text-gray-300 font-medium">{strategy.maxProfit}</div>
+                  <div style={{ color: theme.text.muted }}>Max Profit</div>
+                  <div style={{ color: theme.text.primary }}>{strategy.maxProfit}</div>
                 </div>
                 <div>
-                  <div className="text-gray-500">Max Loss</div>
-                  <div className="text-gray-300 font-medium">{strategy.maxLoss}</div>
+                  <div style={{ color: theme.text.muted }}>Max Loss</div>
+                  <div style={{ color: theme.text.primary }}>{strategy.maxLoss}</div>
                 </div>
                 <div>
-                  <div className="text-gray-500">Breakeven</div>
-                  <div className="text-gray-300 font-medium">{strategy.breakeven}</div>
+                  <div style={{ color: theme.text.muted }}>Breakeven</div>
+                  <div style={{ color: theme.text.primary }}>{strategy.breakeven}</div>
                 </div>
               </div>
             )}

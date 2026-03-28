@@ -1,10 +1,11 @@
 import type { MarketOutlook, Strategy } from '../types';
+import { useTheme } from '../ThemeContext';
 
 const outlookColors: Record<MarketOutlook, { bg: string; active: string; text: string }> = {
-  bullish: { bg: 'bg-emerald-500/10', active: 'bg-emerald-500', text: 'text-emerald-400' },
-  bearish: { bg: 'bg-red-500/10', active: 'bg-red-500', text: 'text-red-400' },
-  neutral: { bg: 'bg-blue-500/10', active: 'bg-blue-500', text: 'text-blue-400' },
-  volatile: { bg: 'bg-amber-500/10', active: 'bg-amber-500', text: 'text-amber-400' },
+  bullish: { bg: 'rgba(16, 185, 129, 0.10)', active: '#10b981', text: '#34d399' },
+  bearish: { bg: 'rgba(239, 68, 68, 0.10)', active: '#ef4444', text: '#f87171' },
+  neutral: { bg: 'rgba(59, 130, 246, 0.10)', active: '#3b82f6', text: '#60a5fa' },
+  volatile: { bg: 'rgba(245, 158, 11, 0.10)', active: '#f59e0b', text: '#fbbf24' },
 };
 
 const outlookLabels: Record<MarketOutlook, string> = {
@@ -29,6 +30,7 @@ export default function StrategySelector({
   onSelectStrategy,
   onSelectOutlook,
 }: Props) {
+  const { theme } = useTheme();
   const filteredStrategies = selectedOutlook
     ? strategies.filter((s) => s.outlook.includes(selectedOutlook))
     : strategies;
@@ -36,7 +38,9 @@ export default function StrategySelector({
   return (
     <div className="flex flex-col h-full">
       <div className="mb-4">
-        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Market Outlook</h3>
+        <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: theme.text.secondary }}>
+          Market Outlook
+        </h3>
         <div className="grid grid-cols-4 gap-1.5">
           {(Object.keys(outlookLabels) as MarketOutlook[]).map((outlook) => {
             const colors = outlookColors[outlook];
@@ -45,11 +49,12 @@ export default function StrategySelector({
               <button
                 key={outlook}
                 onClick={() => onSelectOutlook(isActive ? null : outlook)}
-                className={`px-2 py-2 rounded-lg text-xs font-medium transition-all duration-200 cursor-pointer border ${
-                  isActive
-                    ? `${colors.active} text-white border-transparent shadow-lg`
-                    : `${colors.bg} ${colors.text} border-transparent hover:border-gray-600`
-                }`}
+                className="px-2 py-2 rounded-lg text-xs font-medium transition-all duration-200 cursor-pointer border"
+                style={{
+                  background: isActive ? colors.active : colors.bg,
+                  color: isActive ? '#ffffff' : colors.text,
+                  borderColor: 'transparent',
+                }}
               >
                 {outlookLabels[outlook]}
               </button>
@@ -59,7 +64,7 @@ export default function StrategySelector({
       </div>
 
       <div className="flex-1 overflow-y-auto min-h-0">
-        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: theme.text.secondary }}>
           Strategies ({filteredStrategies.length})
         </h3>
         <div className="space-y-1">
@@ -69,11 +74,12 @@ export default function StrategySelector({
               <button
                 key={strategy.id}
                 onClick={() => onSelectStrategy(strategy)}
-                className={`w-full text-left px-3 py-2.5 rounded-lg transition-all duration-150 cursor-pointer border ${
-                  isSelected
-                    ? 'bg-indigo-500/20 border-indigo-500/50 text-white'
-                    : 'bg-gray-800/50 border-transparent hover:bg-gray-700/50 hover:border-gray-600 text-gray-300'
-                }`}
+                className="w-full text-left px-3 py-2.5 rounded-lg transition-all duration-150 cursor-pointer border"
+                style={{
+                  background: isSelected ? theme.selected.bg : theme.card.bg,
+                  borderColor: isSelected ? theme.selected.border : 'transparent',
+                  color: isSelected ? theme.selected.text : theme.text.primary,
+                }}
               >
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">{strategy.name}</span>
@@ -81,14 +87,17 @@ export default function StrategySelector({
                     {strategy.outlook.map((o) => (
                       <span
                         key={o}
-                        className={`text-[10px] px-1.5 py-0.5 rounded ${outlookColors[o].bg} ${outlookColors[o].text}`}
+                        className="text-[10px] px-1.5 py-0.5 rounded"
+                        style={{ background: outlookColors[o].bg, color: outlookColors[o].text }}
                       >
                         {outlookLabels[o]}
                       </span>
                     ))}
                   </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{strategy.description}</p>
+                <p className="text-xs mt-0.5 line-clamp-1" style={{ color: theme.text.muted }}>
+                  {strategy.description}
+                </p>
               </button>
             );
           })}
