@@ -1,6 +1,6 @@
 import type { Strategy, ExpirationChain, StockInfo, OptionsContract } from './types';
-import csvRaw from '../option_data.csv?raw';
-import symbolRaw from '../symbol.txt?raw';
+
+// --- CSV parsing (unchanged) ---
 
 function parseCSVLine(line: string): string[] {
   const cols: string[] = [];
@@ -121,21 +121,64 @@ function buildExpirationChains(rows: RawRow[]): ExpirationChain[] {
   return chains;
 }
 
-// Parse symbol info
-const symbolJson = JSON.parse(symbolRaw);
-export const stockInfo: StockInfo = {
-  symbol: symbolJson.symbol[0],
-  name: symbolJson.symbol[0],
-  price: symbolJson.last_price[0],
+// --- Mutable data exports ---
+
+export let stockInfo: StockInfo = {
+  symbol: '',
+  name: '',
+  price: 0,
   change: 0,
   changePercent: 0,
 };
 
-// Parse options data
-const rawRows = parseOptionsCSV(csvRaw);
-export const expirationChains: ExpirationChain[] = buildExpirationChains(rawRows);
+export let expirationChains: ExpirationChain[] = [];
 
-// Strategies (presets — unchanged)
+export let dataLoaded = false;
+
+// --- Version + listener system ---
+
+let _version = 0;
+const _listeners = new Set<() => void>();
+
+export function getVersion() { return _version; }
+export function subscribe(fn: () => void): () => void {
+  _listeners.add(fn);
+  return () => _listeners.delete(fn);
+}
+
+export function setOptionsData(newStock: StockInfo, newChains: ExpirationChain[]) {
+  stockInfo = newStock;
+  expirationChains = newChains;
+  dataLoaded = true;
+  _version++;
+  _listeners.forEach(fn => fn());
+}
+
+// --- Load from files ---
+
+export async function loadData() {
+  const [csvText, symbolText] = await Promise.all([
+    fetch('/option_data.csv').then(r => r.text()),
+    fetch('/symbol.txt').then(r => r.text()),
+  ]);
+
+  const symbolJson = JSON.parse(symbolText);
+  const stock: StockInfo = {
+    symbol: symbolJson.symbol[0],
+    name: symbolJson.symbol[0],
+    price: symbolJson.last_price[0],
+    change: 0,
+    changePercent: 0,
+  };
+
+  const rawRows = parseOptionsCSV(csvText);
+  const chains = buildExpirationChains(rawRows);
+
+  setOptionsData(stock, chains);
+}
+
+// --- Strategies (static presets) ---
+
 export const strategies: Strategy[] = [
   {
     id: 'long-call',

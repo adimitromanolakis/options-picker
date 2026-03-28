@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { OptionLeg, MarketOutlook } from './types';
-import { strategies, expirationChains, stockInfo } from './data';
+import { strategies, expirationChains, stockInfo, subscribe, getVersion, loadData, dataLoaded } from './data';
 import { useTheme } from './ThemeContext';
 import StrategySelector from './components/StrategySelector';
 import StrikePicker from './components/StrikePicker';
@@ -36,6 +36,13 @@ export default function App() {
   const { theme, themeName, toggleTheme } = useTheme();
   const [selectedOutlook, setSelectedOutlook] = useState<MarketOutlook | null>(null);
   const [selectedLegs, setSelectedLegs] = useState<OptionLeg[]>([]);
+  const [, setVersion] = useState(getVersion());
+
+  useEffect(() => {
+    const unsub = subscribe(() => setVersion(getVersion()));
+    loadData();
+    return unsub;
+  }, []);
 
   const handleToggleLeg = useCallback((leg: OptionLeg) => {
     setSelectedLegs((prev) => {
@@ -73,6 +80,80 @@ export default function App() {
   const handleClearAll = useCallback(() => {
     setSelectedOutlook(null);
     setSelectedLegs([]);
+  }, []);
+
+  const handleChangeStrike = useCallback((legId: string, direction: -1 | 1) => {
+    setSelectedLegs((prev) =>
+      prev.map((l) => {
+        if (l.id !== legId) return l;
+        const chain = expirationChains.find((c) => c.date === l.expiration);
+        if (!chain) return l;
+        const sorted = [...chain.contracts].sort((a, b) => a.strike - b.strike);
+        const currentIdx = sorted.findIndex((c) => c.strike === l.strike);
+        if (currentIdx < 0) return l;
+
+        let nextIdx = currentIdx + direction;
+        while (nextIdx >= 0 && nextIdx < sorted.length) {
+          const c = sorted[nextIdx];
+          const hasData = l.type === 'call' ? c.callAsk > 0 : c.putAsk > 0;
+          if (hasData) break;
+          nextIdx += direction;
+        }
+        if (nextIdx < 0 || nextIdx >= sorted.length) return l;
+
+        const contract = sorted[nextIdx];
+        const premium = l.position === 'long'
+          ? (l.type === 'call' ? contract.callAsk : contract.putAsk)
+          : (l.type === 'call' ? contract.callBid : contract.putBid);
+
+        return {
+          ...l,
+          strike: contract.strike,
+          premium: Math.round(premium * 100) / 100,
+          iv: l.type === 'call' ? contract.callIV : contract.putIV,
+          delta: l.type === 'call' ? contract.callDelta : contract.putDelta,
+          gamma: l.type === 'call' ? contract.callGamma : contract.putGamma,
+          theta: l.type === 'call' ? contract.callTheta : contract.putTheta,
+          vega: l.type === 'call' ? contract.callVega : contract.putVega,
+        };
+      })
+    );
+  }, []);
+
+  const handleChangeExpiration = useCallback((legId: string, direction: -1 | 1) => {
+    setSelectedLegs((prev) =>
+      prev.map((l) => {
+        if (l.id !== legId) return l;
+        const sorted = [...expirationChains].sort((a, b) => a.date.localeCompare(b.date));
+        const currentIdx = sorted.findIndex((c) => c.date === l.expiration);
+        if (currentIdx < 0) return l;
+
+        const nextIdx = currentIdx + direction;
+        if (nextIdx < 0 || nextIdx >= sorted.length) return l;
+
+        const newChain = sorted[nextIdx];
+        const contract = newChain.contracts.find((c) => c.strike === l.strike);
+        if (!contract) return l;
+
+        const hasData = l.type === 'call' ? contract.callAsk > 0 : contract.putAsk > 0;
+        if (!hasData) return l;
+
+        const premium = l.position === 'long'
+          ? (l.type === 'call' ? contract.callAsk : contract.putAsk)
+          : (l.type === 'call' ? contract.callBid : contract.putBid);
+
+        return {
+          ...l,
+          expiration: newChain.date,
+          premium: Math.round(premium * 100) / 100,
+          iv: l.type === 'call' ? contract.callIV : contract.putIV,
+          delta: l.type === 'call' ? contract.callDelta : contract.putDelta,
+          gamma: l.type === 'call' ? contract.callGamma : contract.putGamma,
+          theta: l.type === 'call' ? contract.callTheta : contract.putTheta,
+          vega: l.type === 'call' ? contract.callVega : contract.putVega,
+        };
+      })
+    );
   }, []);
 
   const handleLoadPreset = useCallback((strategyId: string) => {
@@ -146,6 +227,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: theme.app.bg, color: theme.text.primary }}>
+      {!dataLoaded ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-sm" style={{ color: theme.text.muted }}>Loading options data...</div>
+          </div>
+        </div>
+      ) : (
+      <>
       {/* Header */}
       <header
         className="border-b px-6 py-2.5 flex items-center justify-between flex-shrink-0"
@@ -240,7 +329,6 @@ export default function App() {
           {/* Strike picker */}
           <div className="flex-1 min-h-0 p-4 pt-2">
             <StrikePicker
-              expirationChains={expirationChains}
               selectedLegs={selectedLegs}
               onToggleLeg={handleToggleLeg}
               onRemoveLeg={handleRemoveLeg}
@@ -258,9 +346,13 @@ export default function App() {
             strategy={matchedStrategy ?? null}
             onRemoveLeg={handleRemoveLeg}
             onUpdateLeg={handleUpdateLeg}
+            onChangeStrike={handleChangeStrike}
+            onChangeExpiration={handleChangeExpiration}
           />
         </aside>
       </div>
+      </>
+      )}
     </div>
   );
 }

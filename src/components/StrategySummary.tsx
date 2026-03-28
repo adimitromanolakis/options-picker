@@ -1,14 +1,23 @@
 import type { OptionLeg, OptionType, Position, Strategy } from '../types';
 import { useTheme } from '../ThemeContext';
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatExp(date: string): string {
+  const d = new Date(date + 'T00:00:00');
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
 interface Props {
   legs: OptionLeg[];
   strategy: Strategy | null;
   onRemoveLeg: (legId: string) => void;
   onUpdateLeg: (legId: string, updates: Partial<Pick<OptionLeg, 'type' | 'position' | 'quantity'>>) => void;
+  onChangeStrike: (legId: string, direction: -1 | 1) => void;
+  onChangeExpiration: (legId: string, direction: -1 | 1) => void;
 }
 
-export default function StrategySummary({ legs, strategy, onRemoveLeg, onUpdateLeg }: Props) {
+export default function StrategySummary({ legs, strategy, onRemoveLeg, onUpdateLeg, onChangeStrike, onChangeExpiration }: Props) {
   const { theme } = useTheme();
 
   const netDelta = legs.reduce((sum, leg) => {
@@ -63,13 +72,47 @@ export default function StrategySummary({ legs, strategy, onRemoveLeg, onUpdateL
               >
                 {/* Row 1: Strike + delete */}
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-bold font-mono" style={{ color: theme.text.primary }}>
-                    ${leg.strike.toFixed(0)}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono" style={{ color: theme.text.muted }}>
-                      {leg.expiration}
+                  <div className="flex items-center gap-0">
+                    <button
+                      onClick={() => onChangeStrike(leg.id, -1)}
+                      className="w-6 h-6 flex items-center justify-center rounded-l text-xs font-bold transition-colors cursor-pointer"
+                      style={{ background: theme.button.bg, color: theme.text.secondary, border: `1px solid ${theme.button.border}` }}
+                    >
+                      -
+                    </button>
+                    <span
+                      className="px-4 h-6 flex items-center justify-center text-sm font-bold font-mono"
+                      style={{ background: theme.input.bg, color: theme.text.primary,
+                        borderTop: `1px solid ${theme.input.border}`, borderBottom: `1px solid ${theme.input.border}` }}
+                    >
+                      ${leg.strike.toFixed(0)}
                     </span>
+                    <button
+                      onClick={() => onChangeStrike(leg.id, 1)}
+                      className="w-6 h-6 flex items-center justify-center rounded-r text-xs font-bold transition-colors cursor-pointer"
+                      style={{ background: theme.button.bg, color: theme.text.secondary, border: `1px solid ${theme.button.border}` }}
+                    >
+                      +
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[12px] font-mono" style={{ paddingRight:`5px`, color: theme.text.primary }}>
+                      {formatExp(leg.expiration)}
+                    </span>
+                    <button
+                      onClick={() => onChangeExpiration(leg.id, -1)}
+                      className="w-4 h-4 flex items-center justify-center rounded text-[9px] font-bold transition-colors cursor-pointer"
+                      style={{ margin:`0`, background: theme.button.bg, color: theme.text.secondary, border: `1px solid ${theme.button.border}` }}
+                    >
+                      -
+                    </button>
+                    <button
+                      onClick={() => onChangeExpiration(leg.id, 1)}
+                      className="w-4 h-4 flex items-center justify-center rounded text-[9px] font-bold transition-colors cursor-pointer"
+                      style={{  margin:`0`,background: theme.button.bg, color: theme.text.secondary, border: `1px solid ${theme.button.border}` }}
+                    >
+                      +
+                    </button>
                     <button
                       onClick={() => onRemoveLeg(leg.id)}
                       className="transition-colors cursor-pointer"
@@ -129,17 +172,27 @@ export default function StrategySummary({ legs, strategy, onRemoveLeg, onUpdateL
                       ${leg.premium.toFixed(2)}
                     </span>
                   </span>
-                  <div className="flex items-center gap-1">
-                    <span style={{ color: theme.text.muted }}>Qty</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={100}
-                      value={leg.quantity}
-                      onChange={(e) => onUpdateLeg(leg.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
-                      className="w-10 text-center rounded text-[11px] py-0.5"
-                      style={{ background: theme.input.bg, color: theme.text.primary, border: `1px solid ${theme.input.border}` }}
-                    />
+                  <div className="flex items-center gap-0">
+                    <button
+                      onClick={() => onUpdateLeg(leg.id, { quantity: Math.max(1, leg.quantity - 1) })}
+                      className="w-6 h-6 flex items-center justify-center rounded-l text-xs font-bold transition-colors cursor-pointer"
+                      style={{ background: theme.button.bg, color: theme.text.secondary, border: `1px solid ${theme.button.border}` }}
+                    >
+                      -
+                    </button>
+                    <span
+                      className="w-8 h-6 flex items-center justify-center text-[11px] font-mono"
+                      style={{ background: theme.input.bg, color: theme.text.primary, borderTop: `1px solid ${theme.input.border}`, borderBottom: `1px solid ${theme.input.border}` }}
+                    >
+                      {leg.quantity}
+                    </span>
+                    <button
+                      onClick={() => onUpdateLeg(leg.id, { quantity: Math.min(100, leg.quantity + 1) })}
+                      className="w-6 h-6 flex items-center justify-center rounded-r text-xs font-bold transition-colors cursor-pointer"
+                      style={{ background: theme.button.bg, color: theme.text.secondary, border: `1px solid ${theme.button.border}` }}
+                    >
+                      +
+                    </button>
                   </div>
                   <span style={{ color: theme.text.secondary }}>
                     <span

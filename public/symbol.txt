@@ -1,0 +1,1 @@
+{"symbol":["SPY"],"last_price":[656.51]}

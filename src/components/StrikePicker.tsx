@@ -1,10 +1,9 @@
 import { useState, useMemo } from 'react';
-import type { ExpirationChain, OptionLeg, OptionType, Position } from '../types';
-import { stockInfo } from '../data';
+import type { OptionLeg, OptionType, Position } from '../types';
+import { expirationChains, stockInfo } from '../data';
 import { useTheme } from '../ThemeContext';
 
 interface Props {
-  expirationChains: ExpirationChain[];
   selectedLegs: OptionLeg[];
   onToggleLeg: (leg: OptionLeg) => void;
   onRemoveLeg: (legId: string) => void;
@@ -12,7 +11,7 @@ interface Props {
 
 const MAX_LEGS = 4;
 
-export default function StrikePicker({ expirationChains, selectedLegs, onToggleLeg, onRemoveLeg }: Props) {
+export default function StrikePicker({ selectedLegs, onToggleLeg, onRemoveLeg }: Props) {
   const { theme } = useTheme();
   const [selectedExpirationIdx, setSelectedExpirationIdx] = useState(0);
   const [hoveredStrike, setHoveredStrike] = useState<number | null>(null);
