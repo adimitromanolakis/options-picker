@@ -17,6 +17,30 @@ interface DataPoint {
 const RANGE_OFFSET = 50;
 const STEP = 0.2;
 
+function niceStep(range: number, minTicks: number): number {
+  var rough = range / Math.max(minTicks, 3);
+  var mag = Math.pow(10, Math.floor(Math.log10(rough)));
+  var norm = rough / mag;
+  if (norm <= 1) return mag;
+  if (norm <= 2) return 2 * mag;
+  if (norm <= 5) return 5 * mag;
+  return 10 * mag;
+}
+
+function computeTicks(min: number, max: number): number[] {
+  var range = max - min;
+  if (range <= 0) return [min, max];
+  var step = niceStep(range, 3);
+  var start = Math.floor(min / step) * step;
+  var end = Math.ceil(max / step) * step;
+  var ticks: number[] = [];
+  for (var t = start; t <= end + step / 2; t += step) {
+    var v = Math.round(t * 100) / 100;
+    if (v >= min && v <= max) ticks.push(v);
+  }
+  return ticks;
+}
+
 export default function PayoffDiagram({ legs }: Props) {
   const { theme } = useTheme();
   const spot = stockInfo.price;
@@ -43,6 +67,9 @@ export default function PayoffDiagram({ legs }: Props) {
   const maxPnl = Math.max(...visibleData.map((d) => d.pnl), 1);
   const minPnl = Math.min(...visibleData.map((d) => d.pnl), -1);
   const pnlRange = maxPnl - minPnl || 1;
+  const yPad = pnlRange * 0.1;
+  const yDomain = [minPnl - yPad, maxPnl + yPad];
+  const yTicks = computeTicks(yDomain[0], yDomain[1]);
 
   const breakevenPrice = useMemo(() => {
     if (legs.length === 0) return null;
@@ -156,7 +183,7 @@ export default function PayoffDiagram({ legs }: Props) {
       <div
         ref={chartRef}
         className="rounded-lg border p-2 cursor-grab active:cursor-grabbing"
-        style={{ height: 'calc(100% - 28px)', background: theme.chart.bg, borderColor: theme.app.border }}
+        style={{ height: 'calc(100% - 28px)', background: theme.chart.bg, borderColor: theme.app.border, outline: 'none' }}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -167,8 +194,8 @@ export default function PayoffDiagram({ legs }: Props) {
           <AreaChart data={fullData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
             <defs>
               <linearGradient id="profitGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={theme.buy.text} stopOpacity={0.3} />
-                <stop offset="95%" stopColor={theme.buy.text} stopOpacity={0} />
+                <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke={theme.chart.grid} />
@@ -186,7 +213,8 @@ export default function PayoffDiagram({ legs }: Props) {
               tick={{ fill: theme.text.muted, fontSize: 10 }}
               tickFormatter={(v: number) => `$${v.toFixed(0)}`}
               stroke={theme.app.borderLight}
-              domain={[minPnl - pnlRange * 0.1, maxPnl + pnlRange * 0.1]}
+              domain={yDomain}
+              ticks={yTicks}
             />
             <Tooltip
               contentStyle={{

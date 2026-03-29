@@ -9,3 +9,8 @@ body {
   width: 100%;
   min-height: 100vh;
 }
+
+.recharts-wrapper:focus,
+.recharts-surface:focus {
+  outline: none;
+}

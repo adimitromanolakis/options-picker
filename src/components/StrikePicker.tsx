@@ -9,7 +9,7 @@ interface Props {
   onRemoveLeg: (legId: string) => void;
 }
 
-const MAX_LEGS = 4;
+export const MAX_LEGS = 6;
 
 export default function StrikePicker({ selectedLegs, onToggleLeg, onRemoveLeg }: Props) {
   const { theme } = useTheme();
@@ -161,7 +161,7 @@ export default function StrikePicker({ selectedLegs, onToggleLeg, onRemoveLeg }:
               {/* Call side (left) */}
               <div className="grid grid-cols-4 items-center text-xs px-1">
                 <DataCell value={contract.callVolume > 0 ? contract.callVolume.toLocaleString() : '—'} theme={theme} />
-                <DataCell value={contract.callIV > 0 ? `${(contract.callIV * 100).toFixed(0)}%` : '—'} theme={theme} />
+                <DataCell value={contract.callIV > 0 ? `${(contract.callIV * 100).toFixed(2)}%` : '—'} theme={theme} />
                 <PriceCell
                   value={contract.callAsk > 0 ? contract.callAsk.toFixed(2) : '—'}
                   onClick={() => handleCellClick(contract.strike, 'call', 'ask')}
@@ -206,7 +206,7 @@ export default function StrikePicker({ selectedLegs, onToggleLeg, onRemoveLeg }:
                   theme={theme}
                   type="buy"
                 />
-                <DataCell value={contract.putIV > 0 ? `${(contract.putIV * 100).toFixed(0)}%` : '—'} theme={theme} />
+                <DataCell value={contract.putIV > 0 ? `${(contract.putIV * 100).toFixed(2)}%` : '—'} theme={theme} />
                 <DataCell value={contract.putVolume > 0 ? contract.putVolume.toLocaleString() : '—'} theme={theme} />
               </div>
             </div>

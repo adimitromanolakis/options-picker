@@ -1,9 +1,9 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { OptionLeg, MarketOutlook } from './types';
 import { strategies, expirationChains, stockInfo, subscribe, getVersion, loadData, dataLoaded } from './data';
 import { useTheme } from './ThemeContext';
 import StrategySelector from './components/StrategySelector';
-import StrikePicker from './components/StrikePicker';
+import StrikePicker, { MAX_LEGS } from './components/StrikePicker';
 import PayoffDiagram from './components/PayoffDiagram';
 import StrategySummary from './components/StrategySummary';
 
@@ -37,6 +37,8 @@ export default function App() {
   const [selectedOutlook, setSelectedOutlook] = useState<MarketOutlook | null>(null);
   const [selectedLegs, setSelectedLegs] = useState<OptionLeg[]>([]);
   const [, setVersion] = useState(getVersion());
+  const [chartHeight, setChartHeight] = useState(320);
+  const dragState = useRef<{ startY: number; startHeight: number } | null>(null);
 
   useEffect(() => {
     const unsub = subscribe(() => setVersion(getVersion()));
@@ -44,13 +46,30 @@ export default function App() {
     return unsub;
   }, []);
 
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragState.current = { startY: e.clientY, startHeight: chartHeight };
+    const handleMove = (ev: MouseEvent) => {
+      if (!dragState.current) return;
+      const dy = ev.clientY - dragState.current.startY;
+      setChartHeight(Math.max(150, Math.min(600, dragState.current.startHeight + dy)));
+    };
+    const handleUp = () => {
+      dragState.current = null;
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
+    };
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
+  }, [chartHeight]);
+
   const handleToggleLeg = useCallback((leg: OptionLeg) => {
     setSelectedLegs((prev) => {
       const existing = prev.findIndex((l) => l.id === leg.id);
       if (existing >= 0) {
         return prev.filter((l) => l.id !== leg.id);
       }
-      if (prev.length >= 4) return prev;
+      if (prev.length >= MAX_LEGS) return prev;
       return [...prev, leg];
     });
   }, []);
@@ -319,12 +338,16 @@ export default function App() {
         {/* Center: Chart on top, picker below */}
         <main className="flex-1 flex flex-col min-w-0">
           {/* Payoff chart */}
-          <div className="h-[320px] p-4 pb-2 flex-shrink-0">
+          <div style={{ height: chartHeight, padding: '16px 16px 1px' }} className="flex-shrink-0">
             <PayoffDiagram legs={selectedLegs} />
           </div>
 
-          {/* Divider */}
-          <div className="mx-4 h-px" style={{ background: theme.app.divider }} />
+          {/* Resize handle */}
+          <div
+            className="mx-4 h-0.5 cursor-row-resize rounded-full hover:bg-indigo-500/50 transition-colors"
+            style={{ height: `4px`, background: `theme.app.divider` }}
+            onMouseDown={handleResizeStart}
+          />
 
           {/* Strike picker */}
           <div className="flex-1 min-h-0 p-4 pt-2">
