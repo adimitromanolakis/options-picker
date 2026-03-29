@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, createElement, useState, useCallback, useMemo, type ReactNode } from 'react';
 import { themes, type Theme, type ThemeName } from './themes';
 
 interface ThemeContextValue {
@@ -29,11 +29,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setTheme: setThemeName,
   }), [themeName, toggleTheme]);
 
-  return (
-    <ThemeContext.Provider value={value}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  return createElement(ThemeContext.Provider, { value }, children);
 }
 
 export function useTheme() {
